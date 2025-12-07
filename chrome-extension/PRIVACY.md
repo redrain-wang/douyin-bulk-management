@@ -1,4 +1,4 @@
-# Privacy Policy for Douyin Bulk Manager
+# Privacy Policy for Douyin Bulk Management
 
 **Effective Date:** December 7, 2025
 

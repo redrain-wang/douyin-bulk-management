@@ -1,4 +1,4 @@
-# Douyin Bulk Manager
+# Douyin Bulk Management
 
 抖音创作者平台批量管理工具，支持视频批量选择和删除操作。
 

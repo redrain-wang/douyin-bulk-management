@@ -1,4 +1,4 @@
-# Douyin Console Bulk Delete 扩展
+# Douyin Console Bulk Management
 
 ## 功能简介
 本扩展支持抖音后台视频列表的批量操作，提供"全选"和"批量删除"按钮，方便一键管理视频。
