@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Douyin Bulk Manager",
+  "version": "1.0.0",
+  "description": "抖音创作者平台批量管理工具，支持视频批量选择和删除操作。",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "host_permissions": [
+    "https://creator.douyin.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://creator.douyin.com/*"],
+      "js": ["content_unified.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
