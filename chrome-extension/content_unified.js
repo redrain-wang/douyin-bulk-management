@@ -106,7 +106,14 @@
       
       const data = await response.json();
       if (data && data.aweme_list && Array.isArray(data.aweme_list)) {
-        cachedVideoList = cachedVideoList.concat(data.aweme_list);
+        // 只缓存必要字段，减少内存占用
+        const essentialData = data.aweme_list.map(video => ({
+          aweme_id: video.aweme_id,
+          allow_download: video.video_control?.allow_download ?? true,  // 下载权限
+          private_status: video.status?.private_status ?? 0  // 可见性: 0=公开, 1=私密, 2=好友
+        }));
+        
+        cachedVideoList = cachedVideoList.concat(essentialData);
         
         // 重要：使用返回的 max_cursor 作为下次请求的游标
         if (data.max_cursor) {
@@ -257,7 +264,7 @@
     container.id = 'dy-bulk-controls';
     container.style.display = 'flex';
     container.style.gap = '10px';
-    container.style.zIndex = '999';
+    // container.style.zIndex = '999';
     
     // 嵌入式样式：在列表上方
     container.style.position = 'relative';
@@ -292,8 +299,91 @@
     deleteBtn.style.fontSize = '14px';
     deleteBtn.onclick = bulkDeleteVideo;
 
+    // 分隔符1
+    const separator1 = document.createElement('span');
+    separator1.textContent = '│';
+    separator1.style.color = '#d9d9d9';
+    separator1.style.fontSize = '20px';
+    separator1.style.lineHeight = '1';
+
+    // 可见性按钮组
+    const publicBtn = document.createElement('button');
+    publicBtn.textContent = '公开';
+    publicBtn.style.fontWeight = 'bold';
+    publicBtn.style.background = '#1890ff';
+    publicBtn.style.color = '#fff';
+    publicBtn.style.border = 'none';
+    publicBtn.style.padding = '6px 16px';
+    publicBtn.style.borderRadius = '4px';
+    publicBtn.style.cursor = 'pointer';
+    publicBtn.style.fontSize = '14px';
+    publicBtn.onclick = () => bulkUpdateVisibility(0);
+
+    const privateBtn = document.createElement('button');
+    privateBtn.textContent = '私密';
+    privateBtn.style.fontWeight = 'bold';
+    privateBtn.style.background = '#722ed1';
+    privateBtn.style.color = '#fff';
+    privateBtn.style.border = 'none';
+    privateBtn.style.padding = '6px 16px';
+    privateBtn.style.borderRadius = '4px';
+    privateBtn.style.cursor = 'pointer';
+    privateBtn.style.fontSize = '14px';
+    privateBtn.onclick = () => bulkUpdateVisibility(1);
+
+    const friendBtn = document.createElement('button');
+    friendBtn.textContent = '好友';
+    friendBtn.style.fontWeight = 'bold';
+    friendBtn.style.background = '#13c2c2';
+    friendBtn.style.color = '#fff';
+    friendBtn.style.border = 'none';
+    friendBtn.style.padding = '6px 16px';
+    friendBtn.style.borderRadius = '4px';
+    friendBtn.style.cursor = 'pointer';
+    friendBtn.style.fontSize = '14px';
+    friendBtn.onclick = () => bulkUpdateVisibility(2);
+
+    // 分隔符2
+    const separator2 = document.createElement('span');
+    separator2.textContent = '│';
+    separator2.style.color = '#d9d9d9';
+    separator2.style.fontSize = '20px';
+    separator2.style.lineHeight = '1';
+
+    // 下载权限按钮组
+    const allowDownloadBtn = document.createElement('button');
+    allowDownloadBtn.textContent = '✓ 允许下载';
+    allowDownloadBtn.style.fontWeight = 'bold';
+    allowDownloadBtn.style.background = '#52c41a';
+    allowDownloadBtn.style.color = '#fff';
+    allowDownloadBtn.style.border = 'none';
+    allowDownloadBtn.style.padding = '6px 16px';
+    allowDownloadBtn.style.borderRadius = '4px';
+    allowDownloadBtn.style.cursor = 'pointer';
+    allowDownloadBtn.style.fontSize = '14px';
+    allowDownloadBtn.onclick = () => bulkUpdateDownload(1);
+
+    const disallowDownloadBtn = document.createElement('button');
+    disallowDownloadBtn.textContent = '✗ 禁止下载';
+    disallowDownloadBtn.style.fontWeight = 'bold';
+    disallowDownloadBtn.style.background = '#fa8c16';
+    disallowDownloadBtn.style.color = '#fff';
+    disallowDownloadBtn.style.border = 'none';
+    disallowDownloadBtn.style.padding = '6px 16px';
+    disallowDownloadBtn.style.borderRadius = '4px';
+    disallowDownloadBtn.style.cursor = 'pointer';
+    disallowDownloadBtn.style.fontSize = '14px';
+    disallowDownloadBtn.onclick = () => bulkUpdateDownload(0);
+
     container.appendChild(selectAllBtn);
     container.appendChild(deleteBtn);
+    container.appendChild(separator1);
+    container.appendChild(publicBtn);
+    container.appendChild(privateBtn);
+    container.appendChild(friendBtn);
+    container.appendChild(separator2);
+    container.appendChild(allowDownloadBtn);
+    container.appendChild(disallowDownloadBtn);
 
     if (insertMode === 'prepend') {
         targetContainer.insertBefore(container, targetContainer.firstChild);
@@ -328,16 +418,18 @@
         const isChecked = checkbox && checkbox.getAttribute('data-checked') === 'true';
         
         if (cachedVideoList[index] && cachedVideoList[index].aweme_id) {
-          const itemId = cachedVideoList[index].aweme_id;
+          const videoData = cachedVideoList[index];
           items.push({
             el,
-            itemId,
+            itemId: videoData.aweme_id,
             checkbox,
-            isChecked
+            isChecked,
+            allowDownload: videoData.allow_download,     // 当前下载权限
+            privateStatus: videoData.private_status       // 当前可见性
           });
           
           if (index < 3 || isChecked) {
-            debugLog(`  视频${index+1} ID:`, itemId, isChecked ? '✅已选中' : '');
+            debugLog(`  视频${index+1} ID:`, videoData.aweme_id, isChecked ? '✅已选中' : '');
           }
         } else {
           skippedCount++;
@@ -435,6 +527,141 @@
     }
     
     alert(`删除完成！成功: ${ok}，失败: ${failed}。请刷新页面查看结果。`);
+  }
+
+  // 批量更新视频可见性
+  async function bulkUpdateVisibility(visibilityType) {
+    const visibilityNames = ['公开', '仅自己可见', '好友可见'];
+    const visibilityName = visibilityNames[visibilityType] || '未知';
+    
+    debugLog('🔐 开始批量设置可见性:', visibilityName);
+    const allItems = await getItemsVideo();
+    const items = allItems.filter(({ isChecked }) => isChecked);
+    
+    if (items.length === 0) {
+      alert('请先选择要设置的视频');
+      return;
+    }
+    
+    if (!confirm(`确定要将选中的 ${items.length} 个视频设置为【${visibilityName}】吗？`)) {
+      return;
+    }
+    
+    let ok = 0, failed = 0;
+    
+    for (let i = 0; i < items.length; i++) {
+      const { itemId, allowDownload } = items[i];
+      try {
+        const formData = new URLSearchParams();
+        formData.append('item_id', itemId);
+        formData.append('visibility_type', visibilityType);
+        formData.append('download', allowDownload ? 1 : 0);  // 保持当前下载权限不变
+        formData.append('xg_user_id', '0');
+        formData.append('dx_upgraded', '0');
+        
+        const resp = await fetch('https://creator.douyin.com/web/api/media/aweme/update/', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json, text/plain, */*',
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          },
+          credentials: 'include',
+          body: formData.toString()
+        });
+        
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.status_code === 0) {
+            ok++;
+            debugLog('设置可见性成功:', itemId, visibilityName);
+          } else {
+            failed++;
+            debugWarn('设置可见性失败:', itemId, data);
+          }
+        } else {
+          failed++;
+          debugWarn('请求失败:', itemId, resp.status);
+        }
+        
+        await new Promise(r => setTimeout(r, 500));
+      } catch (e) {
+        failed++;
+        debugError('设置可见性出错:', itemId, e);
+      }
+    }
+    
+    alert(`设置完成！成功: ${ok}，失败: ${failed}`);
+    
+    if (ok > 0) {
+      location.reload();
+    }
+  }
+
+  // 批量更新视频下载权限
+  async function bulkUpdateDownload(downloadEnabled) {
+    const downloadName = downloadEnabled ? '允许下载' : '禁止下载';
+    
+    debugLog('📥 开始批量设置下载权限:', downloadName);
+    const allItems = await getItemsVideo();
+    const items = allItems.filter(({ isChecked }) => isChecked);
+    
+    if (items.length === 0) {
+      alert('请先选择要设置的视频');
+      return;
+    }
+    
+    if (!confirm(`确定要将选中的 ${items.length} 个视频设置为【${downloadName}】吗？`)) {
+      return;
+    }
+    
+    let ok = 0, failed = 0;
+    
+    for (let i = 0; i < items.length; i++) {
+      const { itemId, privateStatus } = items[i];
+      try {
+        const formData = new URLSearchParams();
+        formData.append('item_id', itemId);
+        formData.append('download', downloadEnabled);
+        formData.append('visibility_type', privateStatus);  // 保持当前可见性不变
+        formData.append('xg_user_id', '0');
+        formData.append('dx_upgraded', '0');
+        
+        const resp = await fetch('https://creator.douyin.com/web/api/media/aweme/update/', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json, text/plain, */*',
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          },
+          credentials: 'include',
+          body: formData.toString()
+        });
+        
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.status_code === 0) {
+            ok++;
+            debugLog('设置下载权限成功:', itemId, downloadName);
+          } else {
+            failed++;
+            debugWarn('设置下载权限失败:', itemId, data);
+          }
+        } else {
+          failed++;
+          debugWarn('请求失败:', itemId, resp.status);
+        }
+        
+        await new Promise(r => setTimeout(r, 500));
+      } catch (e) {
+        failed++;
+        debugError('设置下载权限出错:', itemId, e);
+      }
+    }
+    
+    alert(`设置完成！成功: ${ok}，失败: ${failed}`);
+    
+    if (ok > 0) {
+      location.reload();
+    }
   }
 
   let preloadTimeout = null; // 预加载定时器

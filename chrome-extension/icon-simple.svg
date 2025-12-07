@@ -1,0 +1,46 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- 纯色背景（抖音红色） -->
+  <rect width="128" height="128" rx="24" fill="#FE2C55"/>
+  
+  <!-- 左侧：视频列表（三个视频堆叠） -->
+  <g transform="translate(18, 32)">
+    <!-- 视频1 -->
+    <rect x="0" y="0" width="38" height="26" rx="3" fill="white" opacity="0.95"/>
+    <circle cx="19" cy="13" r="7" fill="#FE2C55"/>
+    
+    <!-- 视频2 -->
+    <rect x="0" y="16" width="38" height="26" rx="3" fill="white" opacity="0.8"/>
+    <circle cx="19" cy="29" r="7" fill="#FE2C55"/>
+    
+    <!-- 视频3 -->
+    <rect x="0" y="32" width="38" height="26" rx="3" fill="white" opacity="0.65"/>
+    <circle cx="19" cy="45" r="7" fill="#FE2C55"/>
+  </g>
+  
+  <!-- 右侧：管理/设置工具 -->
+  <g transform="translate(70, 32)">
+    <!-- 半透明背景圆 -->
+    <circle cx="20" cy="20" r="26" fill="white" opacity="0.2"/>
+    
+    <!-- 齿轮图标 -->
+    <g transform="translate(20, 20)">
+      <!-- 齿轮外圈 -->
+      <circle cx="0" cy="0" r="14" fill="none" stroke="white" stroke-width="3"/>
+      
+      <!-- 四个齿 -->
+      <rect x="-1.5" y="-18" width="3" height="5" fill="white" rx="1.5"/>
+      <rect x="-1.5" y="13" width="3" height="5" fill="white" rx="1.5"/>
+      <rect x="-18" y="-1.5" width="5" height="3" fill="white" rx="1.5"/>
+      <rect x="13" y="-1.5" width="5" height="3" fill="white" rx="1.5"/>
+      
+      <!-- 中心圆 -->
+      <circle cx="0" cy="0" r="4.5" fill="white"/>
+    </g>
+    
+    <!-- 右上角：勾选符号 -->
+    <g transform="translate(42, 16)">
+      <circle cx="0" cy="0" r="7" fill="#00E5FF"/>
+      <path d="M -2.5 0 L -0.5 2 L 2.5 -2" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>
