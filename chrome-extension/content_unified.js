@@ -1,7 +1,7 @@
 (() => {
   // ========== 调试模式配置 ==========
   // 设置为 false 用于生产环境（禁用所有日志）
-  const DEBUG = false;
+  const DEBUG = true;
   
   // 调试日志包装函数
   const debugLog = (...args) => {
@@ -11,7 +11,7 @@
     if (DEBUG) console.warn(...args);
   };
   const debugError = (...args) => {
-    debugError(...args); // 错误日志始终输出
+    console.error(...args); // 错误日志始终输出
   };
   
   // 插件版本标识
@@ -107,11 +107,41 @@
       const data = await response.json();
       if (data && data.aweme_list && Array.isArray(data.aweme_list)) {
         // 只缓存必要字段，减少内存占用
-        const essentialData = data.aweme_list.map(video => ({
-          aweme_id: video.aweme_id,
-          allow_download: video.video_control?.allow_download ?? true,  // 下载权限
-          private_status: video.status?.private_status ?? 0  // 可见性: 0=公开, 1=私密, 2=好友
-        }));
+        const essentialData = data.aweme_list.map(video => {
+          // 获取下载链接 - 优先使用 download_addr，备用 play_addr
+          let downloadUrl = '';
+          
+          // 调试：输出完整的视频数据结构
+          debugLog('🎬 视频数据结构:', {
+            aweme_id: video.aweme_id,
+            has_video: !!video.video,
+            has_download_addr: !!video.video?.download_addr,
+            has_play_addr: !!video.video?.play_addr,
+            download_urls: video.video?.download_addr?.url_list,
+            play_urls: video.video?.play_addr?.url_list
+          });
+          
+          if (video.video?.download_addr?.url_list?.length > 0) {
+            // 使用第三个链接（creator.douyin.com），通常最稳定
+            downloadUrl = video.video.download_addr.url_list[2] || 
+                         video.video.download_addr.url_list[0];
+            debugLog('✅ 从 download_addr 获取:', downloadUrl);
+          } else if (video.video?.play_addr?.url_list?.length > 0) {
+            downloadUrl = video.video.play_addr.url_list[2] || 
+                         video.video.play_addr.url_list[0];
+            debugLog('✅ 从 play_addr 获取:', downloadUrl);
+          } else {
+            debugWarn('⚠️ 视频没有可用的下载链接:', video.aweme_id);
+          }
+          
+          return {
+            aweme_id: video.aweme_id,
+            allow_download: video.video_control?.allow_download ?? true,  // 下载权限
+            private_status: video.status?.private_status ?? 0,  // 可见性: 0=公开, 1=私密, 2=好友
+            download_url: downloadUrl,  // 下载链接
+            title: video.desc || `video_${video.aweme_id}`  // 视频标题，用于文件名
+          };
+        });
         
         cachedVideoList = cachedVideoList.concat(essentialData);
         
@@ -375,6 +405,26 @@
     disallowDownloadBtn.style.fontSize = '14px';
     disallowDownloadBtn.onclick = () => bulkUpdateDownload(0);
 
+    // 分隔符3
+    const separator3 = document.createElement('span');
+    separator3.textContent = '│';
+    separator3.style.color = '#d9d9d9';
+    separator3.style.fontSize = '20px';
+    separator3.style.lineHeight = '1';
+
+    // 批量下载按钮
+    const downloadVideosBtn = document.createElement('button');
+    downloadVideosBtn.textContent = '📥 批量下载';
+    downloadVideosBtn.style.fontWeight = 'bold';
+    downloadVideosBtn.style.background = '#1890ff';
+    downloadVideosBtn.style.color = '#fff';
+    downloadVideosBtn.style.border = 'none';
+    downloadVideosBtn.style.padding = '6px 16px';
+    downloadVideosBtn.style.borderRadius = '4px';
+    downloadVideosBtn.style.cursor = 'pointer';
+    downloadVideosBtn.style.fontSize = '14px';
+    downloadVideosBtn.onclick = bulkDownloadVideo;
+
     container.appendChild(selectAllBtn);
     container.appendChild(deleteBtn);
     container.appendChild(separator1);
@@ -384,6 +434,8 @@
     container.appendChild(separator2);
     container.appendChild(allowDownloadBtn);
     container.appendChild(disallowDownloadBtn);
+    container.appendChild(separator3);
+    container.appendChild(downloadVideosBtn);
 
     if (insertMode === 'prepend') {
         targetContainer.insertBefore(container, targetContainer.firstChild);
@@ -425,7 +477,9 @@
             checkbox,
             isChecked,
             allowDownload: videoData.allow_download,     // 当前下载权限
-            privateStatus: videoData.private_status       // 当前可见性
+            privateStatus: videoData.private_status,     // 当前可见性
+            downloadUrl: videoData.download_url,         // 下载链接
+            title: videoData.title                       // 视频标题
           });
           
           if (index < 3 || isChecked) {
@@ -662,6 +716,285 @@
     if (ok > 0) {
       location.reload();
     }
+  }
+
+  // ========== 下载进度UI ==========
+  function createDownloadProgressUI(total) {
+    const container = document.createElement('div');
+    container.id = 'dy-download-progress';
+    container.style.cssText = `
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      width: 360px;
+      max-height: 500px;
+      background: white;
+      border: 2px solid #1890ff;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 999999;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+      overflow: hidden;
+    `;
+    
+    const header = document.createElement('div');
+    header.style.cssText = `
+      background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+      color: white;
+      padding: 12px 16px;
+      font-weight: bold;
+      font-size: 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    `;
+    header.innerHTML = `
+      <span>📥 批量下载进度</span>
+      <span id="dy-download-count">0/${total}</span>
+    `;
+    
+    const list = document.createElement('div');
+    list.id = 'dy-download-list';
+    list.style.cssText = `
+      max-height: 400px;
+      overflow-y: auto;
+      padding: 8px;
+    `;
+    
+    container.appendChild(header);
+    container.appendChild(list);
+    document.body.appendChild(container);
+    
+    return { container, list, total };
+  }
+  
+  function updateDownloadProgress(progressUI, index, filename, status) {
+    const { list, total } = progressUI;
+    const countEl = document.getElementById('dy-download-count');
+    
+    // 更新计数
+    if (countEl) {
+      const completed = status === 'success' || status === 'failed' ? index + 1 : index;
+      countEl.textContent = `${completed}/${total}`;
+    }
+    
+    // 创建或更新列表项
+    let itemEl = document.getElementById(`dy-download-item-${index}`);
+    if (!itemEl) {
+      itemEl = document.createElement('div');
+      itemEl.id = `dy-download-item-${index}`;
+      itemEl.style.cssText = `
+        padding: 10px 12px;
+        margin-bottom: 6px;
+        background: #f5f5f5;
+        border-radius: 6px;
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.3s;
+      `;
+      list.appendChild(itemEl);
+    }
+    
+    // 根据状态设置样式和图标
+    let icon = '⏳';
+    let color = '#666';
+    let bgColor = '#f5f5f5';
+    
+    if (status === 'downloading') {
+      icon = '⬇️';
+      color = '#1890ff';
+      bgColor = '#e6f7ff';
+    } else if (status === 'success') {
+      icon = '✅';
+      color = '#52c41a';
+      bgColor = '#f6ffed';
+    } else if (status === 'failed') {
+      icon = '❌';
+      color = '#ff4d4f';
+      bgColor = '#fff1f0';
+    } else if (status === 'completed') {
+      icon = '🎉';
+      color = '#52c41a';
+      bgColor = '#f6ffed';
+    }
+    
+    itemEl.style.background = bgColor;
+    itemEl.style.borderLeft = `3px solid ${color}`;
+    itemEl.innerHTML = `
+      <span style="font-size: 18px; flex-shrink: 0;">${icon}</span>
+      <span style="flex: 1; color: ${color}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${filename}</span>
+    `;
+    
+    // 自动滚动到最新项
+    if (status === 'downloading') {
+      itemEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+  
+  function removeDownloadProgressUI(progressUI) {
+    if (progressUI && progressUI.container) {
+      progressUI.container.style.opacity = '0';
+      progressUI.container.style.transform = 'translateX(400px)';
+      setTimeout(() => {
+        if (progressUI.container.parentNode) {
+          progressUI.container.parentNode.removeChild(progressUI.container);
+        }
+      }, 300);
+    }
+  }
+
+  // ========== 批量下载视频 ==========
+  async function bulkDownloadVideo() {
+    debugLog('📥 开始批量下载视频');
+    const allItems = await getItemsVideo();
+    const items = allItems.filter(({ isChecked }) => isChecked);
+    
+    if (items.length === 0) {
+      alert('请先选择要下载的视频');
+      return;
+    }
+    
+    // 过滤掉没有下载链接的视频
+    const validItems = items.filter(item => item.downloadUrl);
+    if (validItems.length === 0) {
+      alert('选中的视频没有可用的下载链接，请稍后重试');
+      return;
+    }
+    
+    if (validItems.length < items.length) {
+      const skipCount = items.length - validItems.length;
+      if (!confirm(`有 ${skipCount} 个视频没有下载链接将被跳过，是否继续下载其他 ${validItems.length} 个视频？`)) {
+        return;
+      }
+    } else {
+      if (!confirm(`确定要下载选中的 ${validItems.length} 个视频吗？\n\n下载将逐个进行，请耐心等待...\n建议：为避免触发限流，下载间隔为 2-4 秒`)) {
+        return;
+      }
+    }
+    
+    // 创建下载进度UI
+    const progressUI = createDownloadProgressUI(validItems.length);
+    
+    let ok = 0, failed = 0;
+    
+    // 创建下载函数
+    const downloadVideo = async (url, filename) => {
+      try {
+        debugLog('📥 开始下载:', filename, 'URL:', url);
+        
+        // 使用 fetch 获取视频（不携带凭证，避免CORS跨域问题）
+        const response = await fetch(url, {
+          method: 'GET',
+          mode: 'cors',
+          credentials: 'omit',  // 关键：不发送Cookie，避免CORS wildcard限制
+          headers: {
+            'Accept': '*/*',
+          }
+        });
+        
+        debugLog('📊 响应状态:', response.status, response.statusText);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        
+        // 获取 blob
+        const blob = await response.blob();
+        debugLog('📦 Blob 大小:', (blob.size / 1024 / 1024).toFixed(2), 'MB');
+        
+        // 创建下载链接
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        
+        debugLog('✅ 触发下载:', filename);
+        
+        // 清理
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(blobUrl);
+        }, 100);
+        
+        return true;
+      } catch (e) {
+        debugError('❌ 下载失败:', filename, e);
+        return false;
+      }
+    };
+    
+    // 带重试机制的下载函数（针对403等临时错误）
+    const downloadVideoWithRetry = async (url, filename, maxRetries = 2) => {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const success = await downloadVideo(url, filename);
+        if (success) {
+          return true;
+        }
+        
+        // 如果失败且还有重试次数，等待后重试
+        if (attempt < maxRetries) {
+          const retryDelay = 3000 + Math.random() * 2000; // 3-5秒
+          debugLog(`⚠️ 下载失败，${(retryDelay/1000).toFixed(1)}秒后重试 (${attempt}/${maxRetries})...`);
+          await new Promise(r => setTimeout(r, retryDelay));
+        }
+      }
+      debugWarn(`❌ 重试 ${maxRetries} 次后仍然失败:`, filename);
+      return false;
+    };
+    
+    // 逐个下载视频
+    for (let i = 0; i < validItems.length; i++) {
+      const { itemId, downloadUrl, title } = validItems[i];
+      
+      try {
+        // 生成文件名：清理标题中的特殊字符
+        const cleanTitle = (title || `video_${itemId}`)
+          .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')  // 替换非法字符
+          .substring(0, 100);  // 限制长度
+        const filename = `${cleanTitle}.mp4`;
+        
+        debugLog(`下载进度: [${i + 1}/${validItems.length}] ${filename}`);
+        updateDownloadProgress(progressUI, i, filename, 'downloading');
+        
+        const success = await downloadVideoWithRetry(downloadUrl, filename);
+        
+        if (success) {
+          ok++;
+          debugLog('✅ 下载成功:', filename);
+          updateDownloadProgress(progressUI, i, filename, 'success');
+        } else {
+          failed++;
+          debugWarn('❌ 下载失败:', filename);
+          updateDownloadProgress(progressUI, i, filename, 'failed');
+        }
+        
+        // 下载间隔：2-4秒随机，避免触发限流
+        if (i < validItems.length - 1) {
+          const delay = 2000 + Math.random() * 2000; // 2-4秒
+          debugLog(`⏳ 等待 ${(delay/1000).toFixed(1)} 秒后继续...`);
+          await new Promise(r => setTimeout(r, delay));
+        }
+      } catch (e) {
+        failed++;
+        debugError('下载出错:', itemId, e);
+        updateDownloadProgress(progressUI, i, filename, 'failed');
+      }
+    }
+    
+    // 完成后更新UI并延迟关闭
+    updateDownloadProgress(progressUI, validItems.length, '全部完成', 'completed');
+    setTimeout(() => {
+      removeDownloadProgressUI(progressUI);
+    }, 3000);
+    
+    const failedMsg = failed > 0 ? `\n\n❌ 失败: ${failed} 个（可能触发限流，建议稍后重试）` : '';
+    alert(`✅ 下载完成！\n\n成功: ${ok} 个${failedMsg}\n\n请在浏览器下载管理器中查看文件。`);
+    debugLog('📥 批量下载完成，成功:', ok, '失败:', failed);
   }
 
   let preloadTimeout = null; // 预加载定时器
