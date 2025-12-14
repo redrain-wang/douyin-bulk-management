@@ -1,7 +1,7 @@
 (() => {
   // ========== 调试模式配置 ==========
   // 设置为 false 用于生产环境（禁用所有日志）
-  const DEBUG = true;
+  const DEBUG = false;
   
   // 调试日志包装函数
   const debugLog = (...args) => {
@@ -14,8 +14,79 @@
     console.error(...args); // 错误日志始终输出
   };
   
-  // 插件版本标识
-  debugLog('🔥 抖音创作者中心批量管理视频插件已加载');
+  // ========== 功能开关 ==========
+  const REQUIRED_PATH = '/creator-micro/content/manage';
+  let isPluginEnabled = false;
+  let pluginUIElements = [];
+  
+  // 检查当前页面是否是目标页面
+  const isTargetPage = () => {
+    const pathname = new URL(window.location.href).pathname;
+    return pathname === REQUIRED_PATH || pathname === REQUIRED_PATH + '/';
+  };
+  
+  // 启用插件 UI 和功能
+  const enablePlugin = () => {
+    if (isPluginEnabled) return;
+    isPluginEnabled = true;
+    debugLog('🟢 插件已启用 - 初始化 UI 和功能');
+    
+    // 立即调用启动检查循环
+    if (typeof startCheckLoop === 'function') {
+      startCheckLoop();
+    } else {
+      debugLog('⚠️ startCheckLoop 还未定义，延迟执行');
+      setTimeout(() => {
+        if (typeof startCheckLoop === 'function') {
+          startCheckLoop();
+        }
+      }, 100);
+    }
+  };
+  
+  // 禁用插件 UI 和功能
+  const disablePlugin = () => {
+    if (!isPluginEnabled) return;
+    isPluginEnabled = false;
+    debugLog('🔴 插件已禁用 - 清理 UI 元素和监听器');
+    
+    // 清理 startCheckLoop 的监听器
+    if (checkInterval) clearInterval(checkInterval);
+    if (tabObserver) tabObserver.disconnect();
+    
+    // 移除所有插件 UI 元素
+    pluginUIElements.forEach(el => {
+      try { el.remove(); } catch(e) {}
+    });
+    pluginUIElements = [];
+  };
+  
+  // 监听路由变化，动态启用/禁用插件
+  const setupRouteListener = () => {
+    let lastPathname = new URL(window.location.href).pathname;
+    
+    const checkRoute = () => {
+      const newPathname = new URL(window.location.href).pathname;
+      if (newPathname === lastPathname) return;
+      
+      debugLog('🔄 路由变化:', lastPathname, '→', newPathname);
+      lastPathname = newPathname;
+      
+      if (isTargetPage()) {
+        enablePlugin();
+      } else {
+        disablePlugin();
+      }
+    };
+    
+    window.addEventListener('popstate', () => setTimeout(checkRoute, 100));
+    window.addEventListener('hashchange', checkRoute);
+    setInterval(checkRoute, 500); // SPA 兼容
+  };
+  
+  // ========== 延迟初始化函数 ==========
+  
+  debugLog('🚀 抖音创作者中心批量管理视频插件已加载');
   
   // 缓存的视频列表
   let cachedVideoList = [];
@@ -727,7 +798,7 @@
       top: 80px;
       right: 20px;
       width: 360px;
-      max-height: 500px;
+      max-height: 520px;
       background: white;
       border: 2px solid #1890ff;
       border-radius: 8px;
@@ -735,6 +806,7 @@
       z-index: 999999;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
       overflow: hidden;
+      transition: all 0.3s ease;
     `;
     
     const header = document.createElement('div');
@@ -747,34 +819,139 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      user-select: none;
     `;
-    header.innerHTML = `
-      <span>📥 批量下载进度</span>
-      <span id="dy-download-count">0/${total}</span>
+    
+    const titleSpan = document.createElement('span');
+    titleSpan.textContent = '📥 批量下载进度';
+    
+    const rightContainer = document.createElement('div');
+    rightContainer.style.display = 'flex';
+    rightContainer.style.alignItems = 'center';
+    rightContainer.style.gap = '10px';
+    
+    const countSpan = document.createElement('span');
+    countSpan.id = 'dy-download-count';
+    countSpan.textContent = `0/${total}`;
+    
+    const collapseBtn = document.createElement('button');
+    collapseBtn.textContent = '−';
+    collapseBtn.style.cssText = `
+      background: rgba(255, 255, 255, 0.18);
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      color: white;
+      width: 26px;
+      height: 26px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: all 0.2s;
     `;
+    collapseBtn.onmouseover = () => {
+      collapseBtn.style.background = 'rgba(255, 255, 255, 0.28)';
+    };
+    collapseBtn.onmouseout = () => {
+      collapseBtn.style.background = 'rgba(255, 255, 255, 0.18)';
+    };
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '×';
+    closeBtn.style.cssText = `
+      background: rgba(255, 255, 255, 0.18);
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      color: white;
+      width: 26px;
+      height: 26px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: all 0.2s;
+    `;
+    closeBtn.onmouseover = () => {
+      closeBtn.style.background = 'rgba(255, 255, 255, 0.28)';
+    };
+    closeBtn.onmouseout = () => {
+      closeBtn.style.background = 'rgba(255, 255, 255, 0.18)';
+    };
+    closeBtn.onclick = (e) => {
+      e.stopPropagation();
+      container.remove();
+    };
+    
+    let isCollapsed = false;
     
     const list = document.createElement('div');
     list.id = 'dy-download-list';
     list.style.cssText = `
-      max-height: 400px;
+      max-height: 420px;
       overflow-y: auto;
       padding: 8px;
+      transition: max-height 0.3s ease, opacity 0.3s ease;
+    `;
+    
+    // 折叠/展开逻辑
+    const toggleCollapse = () => {
+      isCollapsed = !isCollapsed;
+      if (isCollapsed) {
+        list.style.maxHeight = '0px';
+        list.style.opacity = '0';
+        list.style.overflow = 'hidden';
+        collapseBtn.textContent = '+';
+      } else {
+        list.style.maxHeight = '420px';
+        list.style.opacity = '1';
+        collapseBtn.textContent = '−';
+      }
+    };
+    collapseBtn.onclick = (e) => {
+      e.stopPropagation();
+      toggleCollapse();
+    };
+    
+    rightContainer.appendChild(countSpan);
+    rightContainer.appendChild(collapseBtn);
+    rightContainer.appendChild(closeBtn);
+    header.appendChild(titleSpan);
+    header.appendChild(rightContainer);
+    
+    // 提示：文件保存在浏览器下载列表
+    const hint = document.createElement('div');
+    hint.textContent = '文件保存在浏览器“下载”列表，可随时手动关闭本窗口。';
+    hint.style.cssText = `
+      font-size: 12px;
+      color: #8c8c8c;
+      padding: 6px 12px 0 12px;
+      line-height: 16px;
     `;
     
     container.appendChild(header);
+    container.appendChild(hint);
     container.appendChild(list);
     document.body.appendChild(container);
     
-    return { container, list, total };
+    return { container, list, total, toggleCollapse, completedCount: 0 };
   }
   
   function updateDownloadProgress(progressUI, index, filename, status) {
     const { list, total } = progressUI;
     const countEl = document.getElementById('dy-download-count');
     
-    // 更新计数
+    // 完成计数只在成功/失败时递增
+    if (status === 'success' || status === 'failed') {
+      progressUI.completedCount = (progressUI.completedCount || 0) + 1;
+    }
     if (countEl) {
-      const completed = status === 'success' || status === 'failed' ? index + 1 : index;
+      const completed = progressUI.completedCount || 0;
       countEl.textContent = `${completed}/${total}`;
     }
     
@@ -790,44 +967,76 @@
         border-radius: 6px;
         font-size: 13px;
         display: flex;
-        align-items: center;
-        gap: 8px;
+        flex-direction: column;
+        gap: 6px;
         transition: all 0.3s;
+      `;
+      itemEl.innerHTML = `
+        <div style="display:flex; align-items:center; gap:8px; min-height:24px;">
+          <span class="dy-dl-icon" style="font-size:18px; flex-shrink:0;">⏳</span>
+          <span class="dy-dl-title" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#666;">${filename}</span>
+        </div>
+        <div class="dy-dl-bar" style="width:100%; height:6px; background:#f0f0f0; border-radius:4px; overflow:hidden;">
+          <div class="dy-dl-bar-inner" style="width:0%; height:100%; background:linear-gradient(90deg,#91d5ff,#1890ff); transition:width 0.3s ease;">
+          </div>
+        </div>
       `;
       list.appendChild(itemEl);
     }
     
-    // 根据状态设置样式和图标
+    const iconEl = itemEl.querySelector('.dy-dl-icon');
+    const titleEl = itemEl.querySelector('.dy-dl-title');
+    const barInner = itemEl.querySelector('.dy-dl-bar-inner');
+    
     let icon = '⏳';
     let color = '#666';
     let bgColor = '#f5f5f5';
+    let barColor = 'linear-gradient(90deg,#91d5ff,#1890ff)';
+    let barWidth = '0%';
     
-    if (status === 'downloading') {
+    if (status === 'pending') {
+      icon = '⌛';
+      color = '#8c8c8c';
+      bgColor = '#fafafa';
+      barColor = '#f0f0f0';
+      barWidth = '0%';
+    } else if (status === 'downloading') {
       icon = '⬇️';
       color = '#1890ff';
       bgColor = '#e6f7ff';
+      barWidth = '50%';
     } else if (status === 'success') {
       icon = '✅';
       color = '#52c41a';
       bgColor = '#f6ffed';
+      barColor = '#52c41a';
+      barWidth = '100%';
     } else if (status === 'failed') {
       icon = '❌';
       color = '#ff4d4f';
       bgColor = '#fff1f0';
+      barColor = '#ff7875';
+      barWidth = '100%';
     } else if (status === 'completed') {
       icon = '🎉';
       color = '#52c41a';
       bgColor = '#f6ffed';
+      barColor = '#52c41a';
+      barWidth = '100%';
     }
     
     itemEl.style.background = bgColor;
     itemEl.style.borderLeft = `3px solid ${color}`;
-    itemEl.innerHTML = `
-      <span style="font-size: 18px; flex-shrink: 0;">${icon}</span>
-      <span style="flex: 1; color: ${color}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${filename}</span>
-    `;
+    if (iconEl) iconEl.textContent = icon;
+    if (titleEl) {
+      titleEl.textContent = filename;
+      titleEl.style.color = color;
+    }
+    if (barInner) {
+      barInner.style.background = barColor;
+      barInner.style.width = barWidth;
+    }
     
-    // 自动滚动到最新项
     if (status === 'downloading') {
       itemEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
@@ -874,8 +1083,16 @@
       }
     }
     
-    // 创建下载进度UI
+    // 创建下载进度UI，并预先展示所有待下载项目
     const progressUI = createDownloadProgressUI(validItems.length);
+    const downloadQueue = validItems.map(({ itemId, title }, idx) => {
+      const cleanTitle = (title || `video_${itemId}`)
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+        .substring(0, 100);
+      const filename = `${cleanTitle}.mp4`;
+      updateDownloadProgress(progressUI, idx, filename, 'pending');
+      return { itemId, filename, downloadUrl: validItems[idx].downloadUrl };
+    });
     
     let ok = 0, failed = 0;
     
@@ -948,17 +1165,11 @@
     };
     
     // 逐个下载视频
-    for (let i = 0; i < validItems.length; i++) {
-      const { itemId, downloadUrl, title } = validItems[i];
+    for (let i = 0; i < downloadQueue.length; i++) {
+      const { itemId, downloadUrl, filename } = downloadQueue[i];
       
       try {
-        // 生成文件名：清理标题中的特殊字符
-        const cleanTitle = (title || `video_${itemId}`)
-          .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')  // 替换非法字符
-          .substring(0, 100);  // 限制长度
-        const filename = `${cleanTitle}.mp4`;
-        
-        debugLog(`下载进度: [${i + 1}/${validItems.length}] ${filename}`);
+        debugLog(`下载进度: [${i + 1}/${downloadQueue.length}] ${filename}`);
         updateDownloadProgress(progressUI, i, filename, 'downloading');
         
         const success = await downloadVideoWithRetry(downloadUrl, filename);
@@ -974,7 +1185,7 @@
         }
         
         // 下载间隔：2-4秒随机，避免触发限流
-        if (i < validItems.length - 1) {
+        if (i < downloadQueue.length - 1) {
           const delay = 2000 + Math.random() * 2000; // 2-4秒
           debugLog(`⏳ 等待 ${(delay/1000).toFixed(1)} 秒后继续...`);
           await new Promise(r => setTimeout(r, delay));
@@ -986,11 +1197,8 @@
       }
     }
     
-    // 完成后更新UI并延迟关闭
-    updateDownloadProgress(progressUI, validItems.length, '全部完成', 'completed');
-    setTimeout(() => {
-      removeDownloadProgressUI(progressUI);
-    }, 3000);
+    // 完成后只提示，不自动关闭窗口
+    updateDownloadProgress(progressUI, downloadQueue.length - 1, '全部完成', 'completed');
     
     const failedMsg = failed > 0 ? `\n\n❌ 失败: ${failed} 个（可能触发限流，建议稍后重试）` : '';
     alert(`✅ 下载完成！\n\n成功: ${ok} 个${failedMsg}\n\n请在浏览器下载管理器中查看文件。`);
@@ -1159,15 +1367,27 @@
     });
   }
 
-  function init() {
-    debugLog('抖音批量删除插件已加载');
-    startCheckLoop();
-    observeUrlChange();
-  }
+  // ========== 入口函数 ==========
+  const init = () => {
+    debugLog('🚀 初始化插件');
+    
+    // 设置路由监听（始终启用）
+    setupRouteListener();
+    
+    // 检查初始页面
+    if (isTargetPage()) {
+      debugLog('📍 初始页面在目标路径上，启用插件');
+      enablePlugin();
+    } else {
+      debugLog('📍 初始页面不在目标路径，等待导航');
+    }
+  };
 
+  // 确保 DOM 加载后再初始化
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
-    init();
+    // DOM 已经加载，直接初始化
+    setTimeout(init, 100);
   }
 })();

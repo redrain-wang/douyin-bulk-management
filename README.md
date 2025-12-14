@@ -5,7 +5,7 @@
 一个强大的 Chrome 扩展，用于批量管理抖音创作者平台的视频内容
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-green.svg)](https://chrome.google.com/webstore)
-[![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)](https://github.com/redrain-wang/douyin-bulk-management)
+[![Version](https://img.shields.io/badge/version-1.1.2-blue.svg)](https://github.com/redrain-wang/douyin-bulk-management)
 [![License](https://img.shields.io/badge/license-MIT-orange.svg)](LICENSE)
 
 [功能特性](#功能特性) • [安装使用](#安装使用) • [使用说明](#使用说明) • [技术实现](#技术实现) • [常见问题](#常见问题)
